@@ -73,6 +73,8 @@ private:
 
     GLuint m_heatmapTexture = 0;
     int m_heatmapTexW = 0, m_heatmapTexH = 0;
+
+    double haversineDistance(double lat1, double lon1, double lat2, double lon2) const;
 };
 
 #endif

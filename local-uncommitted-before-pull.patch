@@ -1,0 +1,103 @@
+diff --git a/include/MapManager.h b/include/MapManager.h
+index 26011e5..e65a1a4 100644
+--- a/include/MapManager.h
++++ b/include/MapManager.h
+@@ -73,6 +73,8 @@ private:
+ 
+     GLuint m_heatmapTexture = 0;
+     int m_heatmapTexW = 0, m_heatmapTexH = 0;
++
++    double haversineDistance(double lat1, double lon1, double lat2, double lon2) const;
+ };
+ 
+ #endif
+\ No newline at end of file
+diff --git a/src/GuiManager.cpp b/src/GuiManager.cpp
+index 94daf51..56e2f2d 100644
+--- a/src/GuiManager.cpp
++++ b/src/GuiManager.cpp
+@@ -166,8 +166,6 @@ void GuiManager::renderMapWindow() {
+                 currentPoints.push_back(p);
+             }
+ 
+-            // Загружаем агрегированные точки из БД
+-            std::vector<MapPoint> aggregatedPoints;
+             // Загружаем агрегированные точки из БД (только один раз)
+             if (!m_aggregatedLoaded) {
+                 auto aggVec = m_server.loadAggregatedPoints();   // метод, который возвращает vector<AggregatedPoint>
+@@ -183,11 +181,11 @@ void GuiManager::renderMapWindow() {
+             }
+             // Используем кэш
+             const auto& aggregatedPoints = m_cachedAggregatedPoints;
+-            for (auto& a : aggVec) {
+-                MapPoint p;
+-                p.lat = a.lat; p.lon = a.lon; p.value = a.rsrp; p.isCurrent = false;
+-                aggregatedPoints.push_back(p);
+-            }
++            // for (auto& a : aggVec) {
++            //     MapPoint p;
++            //     p.lat = a.lat; p.lon = a.lon; p.value = a.rsrp; p.isCurrent = false;
++            //     aggregatedPoints.push_back(p);
++            // }
+ 
+             // Вычисляем радиус в пикселях из радиуса в метрах
+             double metersPerPixel = 156543.03392 * std::cos(mapCenterLat * M_PI / 180.0) / (1 << mapZoom);
+diff --git a/src/MapManager.cpp b/src/MapManager.cpp
+index e92f327..cb92b31 100644
+--- a/src/MapManager.cpp
++++ b/src/MapManager.cpp
+@@ -103,9 +103,18 @@ bool MapManager::downloadTile(Tile& tile) {
+     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &pngData);
+-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
++    curl_easy_setopt(curl, CURLOPT_USERAGENT, "MyMapApp/1.0 (taya@voinov.info)");
+     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+     CURLcode res = curl_easy_perform(curl);
++
++    long http_code = 0;
++    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
++    if (http_code == 418) {
++        std::cerr << "HTTP 418 for tile " << url << std::endl;
++        std::this_thread::sleep_for(std::chrono::seconds(5));
++        return false;
++    }
++
+     curl_easy_cleanup(curl);
+     if (res != CURLE_OK || pngData.empty()) return false;
+     int w, h, channels;
+@@ -144,6 +153,9 @@ void MapManager::workerThreadFunc() {
+             }
+         }
+ 
++        // Добавьте задержку перед запросом (200 мс)
++        std::this_thread::sleep_for(std::chrono::milliseconds(200));
++
+         Tile newTile;
+         newTile.z = req.z; newTile.x = req.x; newTile.y = req.y;
+         if (loadTileFromFile(newTile) || downloadTile(newTile)) {
+@@ -197,6 +209,13 @@ void MapManager::getColorForValue(float value, uint8_t& r, uint8_t& g, uint8_t&
+     else                  { r=0;   g=0;   b=128; }
+ }
+ 
++double MapManager::haversineDistance(double lat1, double lon1, double lat2, double lon2) const {
++    double dlat = (lat2 - lat1) * DEG_TO_RAD;
++    double dlon = (lon2 - lon1) * DEG_TO_RAD;
++    double a = sin(dlat/2)*sin(dlat/2) + cos(lat1*DEG_TO_RAD)*cos(lat2*DEG_TO_RAD)*sin(dlon/2)*sin(dlon/2);
++    return 6371000.0 * 2 * atan2(sqrt(a), sqrt(1-a));
++}
++
+ // ----------------------------------------------------------------------------
+ // Синхронное создание текстуры тепловой карты (круги)
+ // ----------------------------------------------------------------------------
+@@ -298,6 +317,10 @@ void MapManager::renderMap(int winW, int winH,
+                            bool showHeatmap, float heatmapRadiusPixels, float heatmapRadiusMeters,
+                            int criterion) {
+     // Вычисляем видимые тайлы OSM
++    double lonMin = centerLon - 180.0 / (1 << zoom);
++    double lonMax = centerLon + 180.0 / (1 << zoom);
++    double latMin = centerLat - 90.0 / (1 << zoom);
++    double latMax = centerLat + 90.0 / (1 << zoom);
+     double centerTileX = lonToTileX(centerLon, zoom);
+     double centerTileY = latToTileY(centerLat, zoom);
+     int tilesWide = std::ceil(winW / 256.0) + 2;

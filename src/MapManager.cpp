@@ -119,9 +119,18 @@ bool MapManager::downloadTile(Tile& tile) {
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &pngData);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "MyMapApp/1.0 (taya@voinov.info)");
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
     CURLcode res = curl_easy_perform(curl);
+
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (http_code == 418) {
+        std::cerr << "HTTP 418 for tile " << url << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        return false;
+    }
+
     curl_easy_cleanup(curl);
     if (res != CURLE_OK || pngData.empty()) return false;
     int w, h, channels;
@@ -159,6 +168,9 @@ void MapManager::workerThreadFunc() {
                 continue;
             }
         }
+
+        // Добавьте задержку перед запросом (200 мс)
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
         Tile newTile;
         newTile.z = req.z; newTile.x = req.x; newTile.y = req.y;
@@ -211,6 +223,13 @@ void MapManager::getColorForValue(float value, uint8_t& r, uint8_t& g, uint8_t& 
     else if (value > -100){ r=255; g=255; b=0;   }
     else if (value > -110){ r=0;   g=255; b=0;   }
     else                  { r=0;   g=0;   b=128; }
+}
+
+double MapManager::haversineDistance(double lat1, double lon1, double lat2, double lon2) const {
+    double dlat = (lat2 - lat1) * DEG_TO_RAD;
+    double dlon = (lon2 - lon1) * DEG_TO_RAD;
+    double a = sin(dlat/2)*sin(dlat/2) + cos(lat1*DEG_TO_RAD)*cos(lat2*DEG_TO_RAD)*sin(dlon/2)*sin(dlon/2);
+    return 6371000.0 * 2 * atan2(sqrt(a), sqrt(1-a));
 }
 
 // ----------------------------------------------------------------------------
