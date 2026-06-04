@@ -166,8 +166,6 @@ void GuiManager::renderMapWindow() {
                 currentPoints.push_back(p);
             }
 
-            // Загружаем агрегированные точки из БД
-            std::vector<MapPoint> aggregatedPoints;
             // Загружаем агрегированные точки из БД (только один раз)
             if (!m_aggregatedLoaded) {
                 auto aggVec = m_server.loadAggregatedPoints();   // метод, который возвращает vector<AggregatedPoint>
@@ -183,11 +181,6 @@ void GuiManager::renderMapWindow() {
             }
             // Используем кэш
             const auto& aggregatedPoints = m_cachedAggregatedPoints;
-            for (auto& a : aggVec) {
-                MapPoint p;
-                p.lat = a.lat; p.lon = a.lon; p.value = a.rsrp; p.isCurrent = false;
-                aggregatedPoints.push_back(p);
-            }
 
             // Вычисляем радиус в пикселях из радиуса в метрах
             double metersPerPixel = 156543.03392 * std::cos(mapCenterLat * M_PI / 180.0) / (1 << mapZoom);

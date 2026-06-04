@@ -21,6 +21,22 @@ namespace fs = std::filesystem;
 #define PI 3.14159265358979323846
 #define DEG_TO_RAD (PI/180.0)
 
+namespace {
+double haversineDistance(double lat1, double lon1, double lat2, double lon2) {
+    constexpr double earthRadiusMeters = 6371000.0;
+    const double dLat = (lat2 - lat1) * DEG_TO_RAD;
+    const double dLon = (lon2 - lon1) * DEG_TO_RAD;
+    const double rLat1 = lat1 * DEG_TO_RAD;
+    const double rLat2 = lat2 * DEG_TO_RAD;
+
+    const double a = std::sin(dLat / 2.0) * std::sin(dLat / 2.0) +
+                     std::cos(rLat1) * std::cos(rLat2) *
+                     std::sin(dLon / 2.0) * std::sin(dLon / 2.0);
+    const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+    return earthRadiusMeters * c;
+}
+}
+
 // ----------------------------------------------------------------------------
 // Конструктор / деструктор
 // ----------------------------------------------------------------------------
@@ -297,6 +313,11 @@ void MapManager::renderMap(int winW, int winH,
                            const std::vector<MapPoint>& aggregatedPoints,
                            bool showHeatmap, float heatmapRadiusPixels, float heatmapRadiusMeters,
                            int criterion) {
+    const double lonMin = centerLon - 180.0 / (1 << zoom);
+    const double lonMax = centerLon + 180.0 / (1 << zoom);
+    const double latMin = centerLat - 90.0 / (1 << zoom);
+    const double latMax = centerLat + 90.0 / (1 << zoom);
+
     // Вычисляем видимые тайлы OSM
     double centerTileX = lonToTileX(centerLon, zoom);
     double centerTileY = latToTileY(centerLat, zoom);

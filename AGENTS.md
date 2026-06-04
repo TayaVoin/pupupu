@@ -7,6 +7,8 @@
 Главная документация живет в `ssot/`:
 
 - `ssot/user story.md` - исходное описание заданий и пользовательской потребности.
+- `ssot/development-process.md` - как именно ведется разработка: где правим код, где запускаем и дебажим приложение.
+- `ssot/env/dev.md` и `ssot/env/stage.md` - SSOT по окружениям, зависимостям, установке, CMake и линковке.
 - `ssot/project-audit.md` - как проект устроен сейчас.
 - `ssot/performance-and-problems-audit.md` - проблемы, тормоза и технический долг.
 
@@ -20,6 +22,14 @@
 - `ssot/`
 
 Не трать время на `build/` и `build_wsl/` как на исходники: это артефакты сборки, кэш OSM-тайлов, runtime-файлы и старые результаты. `third_party/` редактировать только если задача явно касается vendored ImGui/ImPlot/stb.
+
+## Процесс разработки
+
+- `dev environment` описан в `ssot/env/dev.md`.
+- `stage environment` описан в `ssot/env/stage.md`.
+- Не запускай GUI-приложение на dev environment как полноценный runtime-сценарий.
+- Если нужна проверка CMake/компиляции на dev environment, создавай временную директорию сборки вне репозитория, например в `/private/tmp`, чтобы не возвращать `build/` в рабочее дерево.
+- `build_wsl/` - локальная сборочная директория stage environment под Windows Subsystem for Linux. На dev environment она не нужна и не должна попадать в git.
 
 ## Правила изменений
 

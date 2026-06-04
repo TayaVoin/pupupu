@@ -8,6 +8,13 @@ set(THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/third_party)
 set(INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
 set(SRC_DIR ${PROJECT_SOURCE_DIR}/src)
 
+if (APPLE)
+    list(APPEND CMAKE_PREFIX_PATH
+        /opt/homebrew/opt/libpq
+        /usr/local/opt/libpq
+    )
+endif()
+
 # SDL2
 find_package(SDL2 REQUIRED)
 # OpenGL/GLEW
@@ -15,13 +22,18 @@ find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 # ZeroMQ
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(ZMQ REQUIRED libzmq)
+pkg_check_modules(ZMQ REQUIRED IMPORTED_TARGET libzmq)
 # PostgreSQL
 find_package(PostgreSQL REQUIRED)
 # CURL
 find_package(CURL REQUIRED)
 # nlohmann_json
 find_package(nlohmann_json REQUIRED)
+
+set(EXTRA_LIBS)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    list(APPEND EXTRA_LIBS stdc++fs)
+endif()
 
 include_directories(${INCLUDE_DIR}
     ${SDL2_INCLUDE_DIRS}
@@ -66,11 +78,11 @@ target_link_libraries(server PRIVATE
     imgui implot
     ${SDL2_LIBRARIES}
     ${OPENGL_LIBRARIES}
-    ${GLEW_LIBRARIES}
-    ${ZMQ_LIBRARIES}
+    GLEW::GLEW
+    PkgConfig::ZMQ
     ${PostgreSQL_LIBRARIES}
     ${CURL_LIBRARIES}
     nlohmann_json::nlohmann_json
     pthread
-    stdc++fs
+    ${EXTRA_LIBS}
 )

@@ -21,19 +21,7 @@
 
 `CMakeLists.txt` описывает проект `server_compact`, C++17, target `server`.
 
-Зависимости:
-
-- SDL2
-- OpenGL
-- GLEW
-- ZeroMQ/libzmq через pkg-config
-- PostgreSQL/libpq
-- CURL
-- nlohmann_json
-- pthread
-- vendored ImGui/ImPlot/stb
-
-Проверочная сборка в текущем окружении не запускалась, потому что команда `cmake` отсутствует. По статическому чтению есть явные ошибки компиляции в `src/GuiManager.cpp` и `src/MapManager.cpp`.
+Зависимости, команды установки, CMake/linking-особенности и текущий статус сборки описаны в `ssot/env/dev.md` и `ssot/env/stage.md`. Runtime-проверка с Android/ZMQ/PostgreSQL/GUI выполняется только на stage environment.
 
 ## Поток выполнения
 
@@ -88,7 +76,7 @@
 - `Map Controls` - zoom, переключатель heatmap, критерий, радиус.
 - `OSM Map` - карта, панорамирование, zoom колесом, текущая и агрегированные точки.
 
-Текущее состояние проблемное: блок работы с агрегированными точками содержит повторное объявление `aggregatedPoints`, использует `aggVec` вне области видимости и выглядит как незавершенный merge/черновик.
+Блок работы с агрегированными точками теперь компилируется: кэш `m_cachedAggregatedPoints` заполняется один раз и передается в `MapManager`. По смыслу этот участок все еще требует будущей переработки под несколько критериев heatmap и EARFCN.
 
 ## MapManager
 
@@ -108,6 +96,4 @@
 
 ## Репозиторий и мусор
 
-В git уже отслеживаются `build/` и `build_wsl/`, включая CMake cache, object files, static libraries, binary, `measurements.json`, `imgui.ini` и сотни PNG OSM-тайлов. Это раздувает репозиторий и мешает видеть реальные изменения.
-
-Добавлен `.gitignore`, чтобы новые артефакты не попадали в git. Но уже отслеживаемые файлы останутся в индексе, пока их отдельно не убрать через `git rm --cached` в cleanup-коммите.
+`build/` и `build_wsl/` были удалены из git-индекса cleanup-коммитом и добавлены в `.gitignore`. На dev environment эти папки также удалены локально; stage environment должен создавать свои локальные сборочные папки самостоятельно.

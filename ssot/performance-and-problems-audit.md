@@ -4,11 +4,15 @@
 
 ## Критичные проблемы сборки
 
-1. `src/GuiManager.cpp`: в `renderMapWindow()` дважды объявляется `aggregatedPoints`: сначала изменяемый `std::vector<MapPoint>`, затем `const auto& aggregatedPoints`. В этом же блоке используется `aggVec` за пределами области видимости. Такой код не должен компилироваться.
+Статус на 2026-06-04: dev-сборка через CMake во временной директории доходит до `[100%] Built target server`.
 
-2. `src/MapManager.cpp`: в лямбде `drawPoints` используются `lonMin`, `lonMax`, `latMin`, `latMax`, но в `renderMap()` эти переменные не объявлены. Похожие локальные переменные есть в `generateHeatmapTexture()`, но они недоступны при отрисовке точек.
+Исправленные compile blockers:
 
-3. В текущем окружении команда `cmake` отсутствует, поэтому фактическую сборку подтвердить нельзя. Но перечисленные выше ошибки видны статически.
+- `src/GuiManager.cpp`: убрано повторное объявление `aggregatedPoints` и использование `aggVec` вне области видимости.
+- `src/MapManager.cpp`: добавлен `haversineDistance`, объявлены границы видимой области для отрисовки точек.
+- `CMakeLists.txt`: исправлена переносимость dev/stage сборки. Детали линковки фиксируются в `ssot/env/dev.md` и `ssot/env/stage.md`.
+
+Runtime на stage environment еще нужно проверять отдельно.
 
 ## Почему приложение тормозит
 
@@ -103,7 +107,7 @@ GUI предлагает критерии `RSRP`, `RSRQ`, `RSSI`, `Altitude`, н
 
 ## Проблемы репозитория
 
-- В git уже отслеживаются `build/`, `build_wsl/`, `tile_cache`, object files, static libraries, binary, runtime JSON и `imgui.ini`.
+- История cleanup и правила для `build/`, `build_wsl/`, runtime-файлов и локальных артефактов описаны в `ssot/git-cleanup.md`.
 - Старый `README.md` был общим шаблоном "Dear ImGui проект" и не описывал текущую предметную область.
 - `rrr.txt` дублировал пользовательскую историю; сейчас смысл перенесен в `ssot/user story.md`.
 - `.DS_Store` и локальное состояние Obsidian появились как untracked-файлы.
