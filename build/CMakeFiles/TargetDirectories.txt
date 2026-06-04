@@ -1,0 +1,5 @@
+/mnt/c/Users/i20/Downloads/VisualProg/VisualProg/build/CMakeFiles/imgui.dir
+/mnt/c/Users/i20/Downloads/VisualProg/VisualProg/build/CMakeFiles/implot.dir
+/mnt/c/Users/i20/Downloads/VisualProg/VisualProg/build/CMakeFiles/server.dir
+/mnt/c/Users/i20/Downloads/VisualProg/VisualProg/build/CMakeFiles/edit_cache.dir
+/mnt/c/Users/i20/Downloads/VisualProg/VisualProg/build/CMakeFiles/rebuild_cache.dir
