@@ -1,43 +1,56 @@
-# Dear ImGui проект
-Проект для изучения библиотеки Dear ImGui.
+# Cell Monitor Server
 
-## Что внутри
-- Подключение Dear ImGui и Implot через git submodules
-- Сборка через CMake
-- Интеграция с SDL2 и OpenGL3
-- Базовое окно с кнопкой и счетчиком
+Учебный студенческий C++ проект для приема данных с Android-приложения, сохранения измерений и визуального просмотра параметров мобильной сети. Основной фокус репозитория сейчас - desktop-приложение `server`: оно поднимает ZMQ REP-сервер, принимает JSON с телефона, сохраняет данные в PostgreSQL и резервный JSON-лог, показывает текущие LTE-параметры, график RSRP и карту OpenStreetMap с точками/тепловой картой.
 
-## Структура
+## Что важно в репозитории
+
+- `src/` - реализация приложения.
+- `include/` - заголовки и модели данных.
+- `third_party/` - vendored зависимости ImGui, ImPlot и stb.
+- `ssot/` - Single Source of Truth: проектные заметки, пользовательская история и аудиты для команды/ИИ-агента.
+- `build/`, `build_wsl/` - артефакты сборки и runtime-кэши. Их не следует считать исходниками.
+
+## Архитектура
+
+- `main.cpp` инициализирует SDL2, OpenGL/GLEW, ImGui/ImPlot, создает `ServerCore`, `MapManager`, `GuiManager`, запускает сервер и главный GUI-цикл.
+- `ServerCore` отвечает за ZMQ-сокет на `tcp://*:5000`, разбор входящего JSON, хранение последних измерений в памяти, запись в PostgreSQL и append-only файл `measurements.json`.
+- `GuiManager` строит окна ImGui: текущие данные, график сигнала, статистику, контролы карты и окно OSM-карты.
+- `MapManager` загружает OSM-тайлы через curl, кэширует PNG на диск, создает OpenGL-текстуры и генерирует тепловую карту методом IDW.
+
+Подробный аудит текущего состояния: `ssot/project-audit.md`. Отдельный список проблем и причин тормозов: `ssot/performance-and-problems-audit.md`.
+
+## Зависимости
+
+Проект собирается как C++17/CMake приложение. Нужны:
+
+- CMake 3.14+
+- C++ compiler с поддержкой C++17
+- SDL2
+- OpenGL
+- GLEW
+- ZeroMQ / libzmq
+- PostgreSQL client library / libpq
+- CURL
+- nlohmann_json
+
+Пример для Debian/Ubuntu:
+
+```bash
+sudo apt install cmake g++ libsdl2-dev libglew-dev libgl1-mesa-dev libzmq3-dev libpq-dev libcurl4-openssl-dev nlohmann-json3-dev
 ```
-├── CMakeLists.txt
-├── src/
-│   └── main.cpp
-├── third_party/
-│   ├── imgui/
-│   └── implot/
-└── README.md
-```
-## Стек технологий
-- C++17
-- Dear ImGui (ветка docking) — библиотека для создания GUI.
-- Implot — дополнение к Dear ImGui для визуализации графиков.
-- SDL2 — Simple DirectMedia Layer (используется для создания окна, обработки ввода).
-- OpenGL / GLEW — графический API и библиотека для управления его расширениями.
-- CMake — инструмент для автоматизации сборки.
-- Git Submodules — для управления зависимостями.
 
-## Сборка
-```
-# Установка зависимостей (Ubuntu/Debian)
-sudo apt install libsdl2-dev libgl1-mesa-dev libglew-dev
+## Сборка и запуск
 
-# Клонирование с субмодулями
-git clone --recursive <ссылка>
-cd <папка>
-
-# Сборка
-mkdir build && cd build
-cmake ..
-make
-./main
+```bash
+cmake -S . -B build
+cmake --build build
+./build/server
 ```
+
+Перед запуском проверьте настройки в `include/Config.h`: порт ZMQ, параметры PostgreSQL, пути к кэшу тайлов и JSON-логу.
+
+На текущей машине аудит не смог запустить проверочную сборку: команда `cmake` отсутствует в окружении.
+
+## Текущее состояние
+
+Код выглядит как рабочий учебный прототип после нескольких практических заданий, но в текущем виде требует стабилизации перед активной доработкой. Важные проблемы: часть кода карты/агрегированных точек не компилируется, тепловая карта пересчитывается синхронно каждый кадр, загрузчик тайлов может блокировать запросы, а репозиторий уже содержит много сгенерированных файлов из `build/`.

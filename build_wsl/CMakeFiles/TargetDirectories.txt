@@ -1,3 +1,0 @@
-/mnt/c/Users/Вика/Downloads/Telegram Desktop/VisualProg/VisualProg/build_wsl/CMakeFiles/CellInfoServer.dir
-/mnt/c/Users/Вика/Downloads/Telegram Desktop/VisualProg/VisualProg/build_wsl/CMakeFiles/edit_cache.dir
-/mnt/c/Users/Вика/Downloads/Telegram Desktop/VisualProg/VisualProg/build_wsl/CMakeFiles/rebuild_cache.dir
