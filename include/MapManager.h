@@ -9,6 +9,7 @@
 #include <thread>
 #include <cstdint>
 #include <mutex>
+#include <set>
 #include <GL/glew.h>
 #include "DataModels.h"
 #include "Config.h"
@@ -34,9 +35,14 @@ public:
                    const std::vector<MapPoint>& currentPoints,
                    const std::vector<MapPoint>& aggregatedPoints,
                    bool showHeatmap, float heatmapRadiusPixels, float heatmapRadiusMeters,
-                   int criterion);
+                   int criterion, int earfcnFilter);
 
     void clearCache();
+
+    void requestHeatmapUpdate(double centerLat, double centerLon, int zoom, 
+                              int winW, int winH, float radiusMeters, int criterion,
+                              const std::vector<MapPoint>& allPoints);
+    bool isHeatmapReady() const { return m_heatmapReady; }
 
 private:
     std::string getTilePath(int z, int x, int y);
@@ -75,6 +81,30 @@ private:
     int m_heatmapTexW = 0, m_heatmapTexH = 0;
 
     double haversineDistance(double lat1, double lon1, double lat2, double lon2) const;
+
+    void heatmapWorkerFunc();
+    std::thread m_heatmapWorker;
+    std::atomic<bool> m_heatmapPending{false};
+    std::atomic<bool> m_heatmapReady{false};
+    std::vector<uint8_t> m_lastHeatmapPixels;
+    int m_lastHeatmapW = 0, m_lastHeatmapH = 0;
+    // параметры для сравнения
+    double m_lastCenterLat = 0, m_lastCenterLon = 0;
+    int m_lastZoom = 0, m_lastWinW = 0, m_lastWinH = 0;
+    float m_lastRadiusMeters = 0;
+    int m_lastCriterion = 0;
+    size_t m_lastPointsHash = 0;
+    std::mutex m_heatmapMutex;
+
+    std::vector<MapPoint> m_pendingPoints;
+
+    std::set<std::string> m_requestedTiles;
+    std::mutex m_requestedMutex;
+
+    std::vector<uint8_t> computeHeatmapPixels(const std::vector<MapPoint>& points,
+                                          double centerLat, double centerLon, int zoom,
+                                          int winW, int winH,
+                                          float radiusMeters, int criterion);
 };
 
 #endif

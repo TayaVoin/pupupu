@@ -17,6 +17,7 @@ public:
     bool autoCenter = true;    // автоматически центрировать по новым точкам
     bool firstPointReceived = false;
     int heatmapCriterion = 0;  // 0=RSRP, 1=RSRQ, 2=RSSI, 3=ALTITUDE
+    int selectedEarfcn = 0;   // 0 – все
     float idwRadius = 40.0f;
     float idwPower = 2.0f;
     bool heatmapDirty = true;

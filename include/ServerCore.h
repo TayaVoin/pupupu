@@ -22,6 +22,8 @@ public:
     Measurement getLastMeasurement() const;
     std::vector<Measurement> getHistory() const;
     bool hasNewData();
+    const std::vector<float>& getCachedRsrpHistory() const;
+    size_t getHistorySize() const;
 
     // Загрузить агрегированные точки из БД (каждые AGGREGATION_STEP записей)
     std::vector<AggregatedPoint> loadAggregatedPoints();
@@ -48,6 +50,10 @@ private:
 
     // PostgreSQL
     PGconn* m_dbConn = nullptr;
+
+    mutable std::mutex m_plotMutex;
+    std::vector<float> m_cachedRsrpHistory;
+    size_t m_historyVersion = 0;
 };
 
 #endif

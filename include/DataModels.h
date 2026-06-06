@@ -27,6 +27,7 @@ struct LteCellDto {
     int rssnr = 0;
     int cqi = 0;
     int timingAdvance = 0;
+    int rssi = -120;
 };
 
 struct GsmCellDto {
@@ -71,7 +72,11 @@ struct Measurement {
 struct MapPoint {
     double lat = 0.0;
     double lon = 0.0;
-    float value = 0.0f;     // RSRP, RSRQ, RSSI или Altitude
+    float rsrp = 0.0f;
+    float rsrq = 0.0f;
+    float rssi = 0.0f;
+    float altitude = 0.0f;
+    int earfcn = 0;
     int pci = 0;
     bool isCurrent = false;  // true – только что полученное, false – из БД (агрегированное)
 };
@@ -81,6 +86,10 @@ struct AggregatedPoint {
     double lat = 0.0;
     double lon = 0.0;
     float rsrp = 0.0f;
+    float rsrq = 0.0f;
+    float rssi = 0.0f;
+    float altitude = 0.0f;
+    int earfcn = 0;
     int count = 0;
 };
 

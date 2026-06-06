@@ -50,12 +50,8 @@ void GuiManager::renderSignalPlotsWindow() {
     ImGui::SetNextWindowPos(ImVec2(50,560), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400,300), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Signal Plots")) {
-        auto history = m_server.getHistory();
-        if (history.size() > 1) {
-            std::vector<float> rsrpVals;
-            for (auto& m : history) {
-                if (!m.lteCells.empty()) rsrpVals.push_back((float)m.lteCells[0].rsrp);
-            }
+        const auto& rsrpVals = m_server.getCachedRsrpHistory();
+        if (rsrpVals.size() > 1) {
             if (ImPlot::BeginPlot("RSRP History", ImVec2(-1,200))) {
                 ImPlot::PlotLine("RSRP", rsrpVals.data(), rsrpVals.size());
                 ImPlot::EndPlot();
@@ -71,7 +67,7 @@ void GuiManager::renderStatisticsWindow() {
     ImGui::SetNextWindowPos(ImVec2(50,870), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(400,200), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Statistics")) {
-        auto history = m_server.getHistory();
+        auto history = m_server.getCachedRsrpHistory();
         ImGui::Text("Total measurements: %zu", history.size());
         ImGui::End();
     }
@@ -87,6 +83,7 @@ void GuiManager::renderMapControlsWindow() {
         const char* criteria[] = {"RSRP","RSRQ","RSSI","Altitude"};
         ImGui::Combo("Criterion", &heatmapCriterion, criteria, 4);
         ImGui::SliderFloat("Heatmap radius (m)", &idwRadius, 10.0f, 40.0f);
+        ImGui::InputInt("EARFCN filter (0=all)", &selectedEarfcn);
         ImGui::End();
     }
 }
@@ -160,7 +157,12 @@ void GuiManager::renderMapWindow() {
                 MapPoint p;
                 p.lat = m.location.latitude;
                 p.lon = m.location.longitude;
-                p.value = (float)m.lteCells[0].rsrp;
+                p.rsrp = (float)m.lteCells[0].rsrp;
+                p.rsrq = (float)m.lteCells[0].rsrq;
+                // Если в DTO нет rssi, можно использовать rsrp как временную заглушку
+                p.rssi = (float)m.lteCells[0].rsrp; // или задать 0
+                p.altitude = (float)m.location.altitude;
+                p.earfcn = m.lteCells[0].earfcn;
                 p.pci = m.lteCells[0].pci;
                 p.isCurrent = true;
                 currentPoints.push_back(p);
@@ -168,12 +170,16 @@ void GuiManager::renderMapWindow() {
 
             // Загружаем агрегированные точки из БД (только один раз)
             if (!m_aggregatedLoaded) {
-                auto aggVec = m_server.loadAggregatedPoints();   // метод, который возвращает vector<AggregatedPoint>
+                auto aggVec = m_server.loadAggregatedPoints();
                 for (auto& a : aggVec) {
                     MapPoint p;
                     p.lat = a.lat;
                     p.lon = a.lon;
-                    p.value = a.rsrp;
+                    p.rsrp = a.rsrp;
+                    p.rsrq = a.rsrq;
+                    p.rssi = a.rssi;
+                    p.altitude = a.altitude;
+                    p.earfcn = a.earfcn;
                     p.isCurrent = false;
                     m_cachedAggregatedPoints.push_back(p);
                 }
@@ -191,7 +197,7 @@ void GuiManager::renderMapWindow() {
             m_mapManager.renderMap((int)winSize.x, (int)winSize.y,
                                    mapCenterLat, mapCenterLon, mapZoom,
                                    currentPoints, aggregatedPoints,
-                                   showHeatmap, radiusPixels, idwRadius, heatmapCriterion);
+                                   showHeatmap, radiusPixels, idwRadius, heatmapCriterion, selectedEarfcn);
         }
         ImGui::End();
     }
@@ -203,7 +209,11 @@ void GuiManager::setAggregatedPoints(const std::vector<AggregatedPoint>& points)
         MapPoint p;
         p.lat = a.lat;
         p.lon = a.lon;
-        p.value = a.rsrp;
+        p.rsrp = a.rsrp;
+        p.rsrq = a.rsrq;
+        p.rssi = a.rssi;
+        p.altitude = a.altitude;
+        p.earfcn = a.earfcn;
         p.isCurrent = false;
         m_cachedAggregatedPoints.push_back(p);
     }

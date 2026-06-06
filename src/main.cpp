@@ -37,8 +37,8 @@ int main(int argc, char* argv[]) {
     // Загружаем агрегированные точки из БД для отображения (не меняем центр)
     // Они будут использоваться в GuiManager для отрисовки и тепловой карты
     auto aggPoints = server.loadAggregatedPoints();
-    // Передаём их в GuiManager (добавим метод setAggregatedPoints)
-    gui.setAggregatedPoints(aggPoints);   // нужно реализовать
+    // Передаём их в GuiManager
+    gui.setAggregatedPoints(aggPoints);
     std::cout << "Aggregated points loaded from DB: " << aggPoints.size() << std::endl;
 
     bool running = true;

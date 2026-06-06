@@ -77,6 +77,18 @@ void ServerCore::serverLoop() {
                 m_lastMeasurement = m;
                 m_hasNewData = true;
             }
+
+            // Обновить кэш для графиков (только если изменилась история)
+            {
+                std::lock_guard<std::mutex> lock(m_plotMutex);
+                m_cachedRsrpHistory.clear();
+                m_cachedRsrpHistory.reserve(m_history.size());
+                for (const auto& meas : m_history) {
+                    if (!meas.lteCells.empty())
+                        m_cachedRsrpHistory.push_back((float)meas.lteCells[0].rsrp);
+                }
+            }
+
             // В БД
             if (m_dbConn) saveToDatabase(m);
             // В JSON файл (бэкап)
@@ -123,6 +135,7 @@ Measurement ServerCore::parseJson(const std::string& jsonStr) {
                 lte.rssnr = cell.value("rssnr", 0);
                 lte.cqi = cell.value("cqi", 0);
                 lte.timingAdvance = cell.value("timingAdvance", 0);
+                lte.rssi = cell.value("rssi", -120);
                 m.lteCells.push_back(lte);
             }
         }
@@ -240,7 +253,11 @@ std::vector<AggregatedPoint> ServerCore::loadAggregatedPoints() {
     std::vector<AggregatedPoint> result;
     if (!m_dbConn) return result;
 
-    const char* sql = "SELECT latitude, longitude, lte_rsrp FROM measurements WHERE latitude IS NOT NULL AND lte_rsrp IS NOT NULL ORDER BY timestamp";
+    // Загружаем последние 50000 записей (для быстрого старта)
+    // Используем индекс по timestamp
+    const char* sql = "SELECT latitude, longitude, lte_rsrp, lte_rsrq, lte_rssi, altitude, lte_earfcn "
+                      "FROM measurements WHERE latitude IS NOT NULL AND lte_rsrp IS NOT NULL "
+                      "ORDER BY timestamp DESC LIMIT 50000";
     PGresult* res = PQexec(m_dbConn, sql);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         std::cerr << "loadAggregatedPoints query failed: " << PQerrorMessage(m_dbConn) << std::endl;
@@ -255,6 +272,10 @@ std::vector<AggregatedPoint> ServerCore::loadAggregatedPoints() {
         p.lat = atof(PQgetvalue(res, i, 0));
         p.lon = atof(PQgetvalue(res, i, 1));
         p.rsrp = (float)atoi(PQgetvalue(res, i, 2));
+        p.rsrq = (float)atoi(PQgetvalue(res, i, 3));
+        p.rssi = (float)atoi(PQgetvalue(res, i, 4));
+        p.altitude = (float)atof(PQgetvalue(res, i, 5));
+        p.earfcn = atoi(PQgetvalue(res, i, 6));
         p.count = 1;
         result.push_back(p);
         if (result.size() >= MAX_AGGREGATED_POINTS) break;
@@ -275,4 +296,14 @@ std::vector<Measurement> ServerCore::getHistory() const {
 
 bool ServerCore::hasNewData() {
     return m_hasNewData.exchange(false);
+}
+
+const std::vector<float>& ServerCore::getCachedRsrpHistory() const {
+    std::lock_guard<std::mutex> lock(m_plotMutex);
+    return m_cachedRsrpHistory;
+}
+
+size_t ServerCore::getHistorySize() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_history.size();
 }

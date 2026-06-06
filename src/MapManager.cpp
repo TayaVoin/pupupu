@@ -21,22 +21,6 @@ namespace fs = std::filesystem;
 #define PI 3.14159265358979323846
 #define DEG_TO_RAD (PI/180.0)
 
-namespace {
-double haversineDistance(double lat1, double lon1, double lat2, double lon2) {
-    constexpr double earthRadiusMeters = 6371000.0;
-    const double dLat = (lat2 - lat1) * DEG_TO_RAD;
-    const double dLon = (lon2 - lon1) * DEG_TO_RAD;
-    const double rLat1 = lat1 * DEG_TO_RAD;
-    const double rLat2 = lat2 * DEG_TO_RAD;
-
-    const double a = std::sin(dLat / 2.0) * std::sin(dLat / 2.0) +
-                     std::cos(rLat1) * std::cos(rLat2) *
-                     std::sin(dLon / 2.0) * std::sin(dLon / 2.0);
-    const double c = 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-    return earthRadiusMeters * c;
-}
-}
-
 // ----------------------------------------------------------------------------
 // Конструктор / деструктор
 // ----------------------------------------------------------------------------
@@ -44,11 +28,14 @@ MapManager::MapManager() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     m_workerRunning = true;
     m_workerThread = std::thread(&MapManager::workerThreadFunc, this);
+    m_heatmapWorker = std::thread(&MapManager::heatmapWorkerFunc, this);
 }
 
 MapManager::~MapManager() {
     m_workerRunning = false;
     if (m_workerThread.joinable()) m_workerThread.join();
+    m_heatmapPending = false;
+    if (m_heatmapWorker.joinable()) m_heatmapWorker.join();
     curl_global_cleanup();
 }
 
@@ -60,6 +47,12 @@ void MapManager::initGL() {
 // Тайлы OSM
 // ----------------------------------------------------------------------------
 void MapManager::requestTile(int z, int x, int y) {
+    std::string key = std::to_string(z) + "/" + std::to_string(x) + "/" + std::to_string(y);
+    {
+        std::lock_guard<std::mutex> lock(m_requestedMutex);
+        if (m_requestedTiles.find(key) != m_requestedTiles.end()) return;
+        m_requestedTiles.insert(key);
+    }
     std::lock_guard<std::mutex> lock(m_queueMutex);
     m_requestQueue.push({z, x, y});
 }
@@ -175,8 +168,11 @@ void MapManager::workerThreadFunc() {
         Tile newTile;
         newTile.z = req.z; newTile.x = req.x; newTile.y = req.y;
         if (loadTileFromFile(newTile) || downloadTile(newTile)) {
-            std::lock_guard<std::mutex> clock(m_cacheMutex);
+            std::lock_guard<std::mutex> lock(m_cacheMutex);
             m_tileCache[key] = std::move(newTile);
+            // удалить из запрошенных
+            std::lock_guard<std::mutex> lockReq(m_requestedMutex);
+            m_requestedTiles.erase(key);
         }
     }
 }
@@ -282,12 +278,23 @@ void MapManager::generateHeatmapTexture(const std::vector<MapPoint>& points,
             for (const auto& p : relevantPoints) {
                 double d = haversineDistance(lat, lon, p.lat, p.lon);
                 if (d > radiusMeters) continue;
+
+                // Выбираем значение в зависимости от критерия
+                float val;
+                switch (criterion) {
+                    case 0: val = p.rsrp; break;    // RSRP
+                    case 1: val = p.rsrq; break;    // RSRQ
+                    case 2: val = p.rssi; break;    // RSSI
+                    case 3: val = p.altitude; break; // Altitude
+                    default: val = p.rsrp; break;
+                }
+
                 if (d < 1e-3) {
-                    sumW = 1.0; sumWV = p.value; break;
+                    sumW = 1.0; sumWV = val; break;
                 }
                 double w = 1.0 / (d * d);
                 sumW += w;
-                sumWV += w * p.value;
+                sumWV += w * val;
             }
             float value = (sumW > 0) ? (float)(sumWV / sumW) : -140.0f;
             uint8_t r, g, b;
@@ -331,7 +338,7 @@ void MapManager::renderMap(int winW, int winH,
                            const std::vector<MapPoint>& currentPoints,
                            const std::vector<MapPoint>& aggregatedPoints,
                            bool showHeatmap, float heatmapRadiusPixels, float heatmapRadiusMeters,
-                           int criterion) {
+                           int criterion, int earfcnFilter) {
     const double lonMin = centerLon - 180.0 / (1 << zoom);
     const double lonMax = centerLon + 180.0 / (1 << zoom);
     const double latMin = centerLat - 90.0 / (1 << zoom);
@@ -361,10 +368,10 @@ void MapManager::renderMap(int winW, int winH,
             double tileLeftLon = tileXToLon(tileX, zoom);
             double tileRightLon = tileXToLon(tileX+1, zoom);
 
-            double pxLeft = (tileLeftLon - (centerLon - 180.0/(1<<zoom))) / (360.0/(1<<zoom)) * winW;
-            double pxRight = (tileRightLon - (centerLon - 180.0/(1<<zoom))) / (360.0/(1<<zoom)) * winW;
-            double pyTop = (centerLat - tileTopLat) / (180.0/(1<<zoom)) * winH;
-            double pyBottom = (centerLat - tileBottomLat) / (180.0/(1<<zoom)) * winH;
+            double pxLeft = (tileLeftLon - lonMin) / (lonMax - lonMin) * winW;
+            double pxRight = (tileRightLon - lonMin) / (lonMax - lonMin) * winW;
+            double pyTop = (latMax - tileTopLat) / (latMax - latMin) * winH;
+            double pyBottom = (latMax - tileBottomLat) / (latMax - latMin) * winH;
 
             Tile* tile = getTile(zoom, tileX, tileY);
             if (tile && tile->loaded && !tile->rgbaData.empty()) {
@@ -387,10 +394,16 @@ void MapManager::renderMap(int winW, int winH,
 
     // ---- 2. Тепловая карта (если включена) ----
     if (showHeatmap) {
-        std::vector<MapPoint> allPoints = currentPoints;
-        allPoints.insert(allPoints.end(), aggregatedPoints.begin(), aggregatedPoints.end());
-        generateHeatmapTexture(allPoints, centerLat, centerLon, zoom, winW, winH,
-                               heatmapRadiusPixels, heatmapRadiusMeters, criterion);
+        std::vector<MapPoint> allPoints;
+        for (const auto& p : currentPoints) {
+            if (earfcnFilter == 0 || p.earfcn == earfcnFilter)
+                allPoints.push_back(p);
+        }
+        for (const auto& p : aggregatedPoints) {
+            if (earfcnFilter == 0 || p.earfcn == earfcnFilter)
+                allPoints.push_back(p);
+        }
+        requestHeatmapUpdate(centerLat, centerLon, zoom, winW, winH, heatmapRadiusMeters, criterion, allPoints);
     } else {
         // Если тепловая карта выключена, удаляем текстуру
         if (m_heatmapTexture != 0) {
@@ -399,8 +412,15 @@ void MapManager::renderMap(int winW, int winH,
         }
     }
 
-    // Рисуем тепловую карту (если есть)
-    if (m_heatmapTexture != 0) {
+    // отрисовка: использовать кэшированную текстуру
+    if (m_heatmapReady) {
+        std::lock_guard<std::mutex> lock(m_heatmapMutex);
+        if (m_heatmapTexture == 0) glGenTextures(1, &m_heatmapTexture);
+        glBindTexture(GL_TEXTURE_2D, m_heatmapTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_lastHeatmapW, m_lastHeatmapH, 0,
+                    GL_RGBA, GL_UNSIGNED_BYTE, m_lastHeatmapPixels.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         draw->AddImage((void*)(intptr_t)m_heatmapTexture, winPos, ImVec2(winPos.x+winW, winPos.y+winH));
     }
 
@@ -416,4 +436,139 @@ void MapManager::renderMap(int winW, int winH,
     };
     drawPoints(currentPoints, IM_COL32(255,0,0,255), 5.0f);
     drawPoints(aggregatedPoints, IM_COL32(0,255,0,255), 3.0f);
+}
+
+// Проверяет, изменились ли параметры, и если да – ставит задачу в очередь.
+void MapManager::requestHeatmapUpdate(double centerLat, double centerLon, int zoom,
+                                      int winW, int winH, float radiusMeters, int criterion,
+                                      const std::vector<MapPoint>& allPoints) {
+    // быстрое вычисление хэша точек (просто размер + несколько первых значений)
+    size_t hash = allPoints.size();
+    if (!allPoints.empty()) {
+        hash ^= std::hash<double>{}(allPoints[0].lat) ^ std::hash<double>{}(allPoints[0].lon);
+    }
+    bool changed = (centerLat != m_lastCenterLat) ||
+                   (centerLon != m_lastCenterLon) ||
+                   (zoom != m_lastZoom) ||
+                   (winW != m_lastWinW) || (winH != m_lastWinH) ||
+                   (radiusMeters != m_lastRadiusMeters) ||
+                   (criterion != m_lastCriterion) ||
+                   (hash != m_lastPointsHash);
+    if (!changed) return;
+    
+    // сохраняем параметры и точки для фонового потока
+    {
+        std::lock_guard<std::mutex> lock(m_heatmapMutex);
+        m_lastCenterLat = centerLat; m_lastCenterLon = centerLon;
+        m_lastZoom = zoom; m_lastWinW = winW; m_lastWinH = winH;
+        m_lastRadiusMeters = radiusMeters; m_lastCriterion = criterion;
+        m_lastPointsHash = hash;
+        m_pendingPoints = allPoints;  // нужно добавить поле m_pendingPoints
+        m_heatmapPending = true;
+        m_heatmapReady = false;
+    }
+}
+
+
+void MapManager::heatmapWorkerFunc() {
+    while (m_workerRunning) {
+        if (!m_heatmapPending) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+        // копируем данные
+        double centerLat, centerLon; int zoom, winW, winH; float radiusMeters; int criterion;
+        std::vector<MapPoint> points;
+        {
+            std::lock_guard<std::mutex> lock(m_heatmapMutex);
+            centerLat = m_lastCenterLat; centerLon = m_lastCenterLon;
+            zoom = m_lastZoom; winW = m_lastWinW; winH = m_lastWinH;
+            radiusMeters = m_lastRadiusMeters; criterion = m_lastCriterion;
+            points = m_pendingPoints;
+            m_heatmapPending = false;
+        }
+        // генерация текстуры (используем существующую generateHeatmapTexture без создания OpenGL-текстуры)
+        std::vector<uint8_t> pixels = computeHeatmapPixels(points, centerLat, centerLon, zoom, winW, winH, radiusMeters, criterion);
+        if (!pixels.empty()) {
+            // сохраняем в кэш
+            {
+                std::lock_guard<std::mutex> lock(m_heatmapMutex);
+                m_lastHeatmapPixels.swap(pixels);
+                m_lastHeatmapW = winW; m_lastHeatmapH = winH;
+                m_heatmapReady = true;
+            }
+            // сохраняем PNG (не каждый кадр, а только после генерации)
+            std::string dir = "heatmap_cache";
+            fs::create_directories(dir);
+            std::string path = dir + "/heatmap_zoom_" + std::to_string(zoom) + ".png";
+            stbi_write_png(path.c_str(), winW, winH, 4, m_lastHeatmapPixels.data(), winW*4);
+        }
+    }
+}
+
+std::vector<uint8_t> MapManager::computeHeatmapPixels(const std::vector<MapPoint>& points,
+                                                      double centerLat, double centerLon, int zoom,
+                                                      int winW, int winH,
+                                                      float radiusMeters, int criterion) {
+    std::vector<uint8_t> pixels(winW * winH * 4, 0);
+    double lonMin = centerLon - 180.0 / (1 << zoom);
+    double lonMax = centerLon + 180.0 / (1 << zoom);
+    double latMin = centerLat - 90.0 / (1 << zoom);
+    double latMax = centerLat + 90.0 / (1 << zoom);
+
+    // Фильтруем точки
+    double marginLat = radiusMeters / 111319.0;
+    double marginLon = marginLat / std::cos(centerLat * DEG_TO_RAD);
+    double latMinExt = latMin - marginLat;
+    double latMaxExt = latMax + marginLat;
+    double lonMinExt = lonMin - marginLon;
+    double lonMaxExt = lonMax + marginLon;
+    std::vector<MapPoint> relevantPoints;
+    for (const auto& p : points) {
+        if (p.lat >= latMinExt && p.lat <= latMaxExt && p.lon >= lonMinExt && p.lon <= lonMaxExt) {
+            relevantPoints.push_back(p);
+        }
+    }
+    if (relevantPoints.empty()) {
+        return pixels;  // пустая текстура
+    }
+
+    // IDW для каждого пикселя
+    for (int y = 0; y < winH; ++y) {
+        double lat = latMax - (double)y / winH * (latMax - latMin);
+        for (int x = 0; x < winW; ++x) {
+            double lon = lonMin + (double)x / winW * (lonMax - lonMin);
+            double sumW = 0.0, sumWV = 0.0;
+            for (const auto& p : relevantPoints) {
+                double d = haversineDistance(lat, lon, p.lat, p.lon);
+                if (d > radiusMeters) continue;
+
+                // Выбор значения в зависимости от критерия
+                float val;
+                switch (criterion) {
+                    case 0: val = p.rsrp; break;      // RSRP
+                    case 1: val = p.rsrq; break;      // RSRQ
+                    case 2: val = p.rssi; break;      // RSSI
+                    case 3: val = p.altitude; break;  // Altitude
+                    default: val = p.rsrp; break;
+                }
+
+                if (d < 1e-3) {
+                    sumW = 1.0; sumWV = val; break;
+                }
+                double w = 1.0 / (d * d);
+                sumW += w;
+                sumWV += w * val;
+            }
+            float value = (sumW > 0) ? (float)(sumWV / sumW) : -140.0f;
+            uint8_t r, g, b;
+            getColorForValue(value, r, g, b);
+            int idx = (y * winW + x) * 4;
+            pixels[idx+0] = r;
+            pixels[idx+1] = g;
+            pixels[idx+2] = b;
+            pixels[idx+3] = 200;
+        }
+    }
+    return pixels;
 }
