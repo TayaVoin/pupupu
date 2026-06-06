@@ -213,12 +213,54 @@ double MapManager::metersToPixels(double meters, double centerLat, int zoom, int
 // ----------------------------------------------------------------------------
 // Преобразование значения RSRP в цвет
 // ----------------------------------------------------------------------------
-void MapManager::getColorForValue(float value, uint8_t& r, uint8_t& g, uint8_t& b) {
-    if (value > -80)      { r=255; g=0;   b=0;   }
-    else if (value > -90) { r=255; g=165; b=0;   }
-    else if (value > -100){ r=255; g=255; b=0;   }
-    else if (value > -110){ r=0;   g=255; b=0;   }
-    else                  { r=0;   g=0;   b=128; }
+// Функция градиента
+void MapManager::valueToGradientColor(float value, float minVal, float maxVal,
+                                       uint8_t& r, uint8_t& g, uint8_t& b) {
+    // Ограничиваем значение диапазоном
+    float t = (value - minVal) / (maxVal - minVal);
+    t = std::max(0.0f, std::min(1.0f, t));  // Прижимаем к [0,1]
+    
+    // Цвета градиента: от красного (плохо) -> жёлтый -> зелёный (хорошо)
+    // Три опорных точки: red (t=0), yellow (t=0.5), green (t=1)
+    if (t < 0.5f) {
+        // Красный -> жёлтый
+        float t2 = t / 0.5f;  // от 0 до 1
+        r = 255;
+        g = (uint8_t)(255 * t2);
+        b = 0;
+    } else {
+        // Жёлтый -> зелёный
+        float t2 = (t - 0.5f) / 0.5f;
+        r = (uint8_t)(255 * (1.0f - t2));
+        g = 255;
+        b = 0;
+    }
+}
+
+// Диапазоны
+void MapManager::getRangeForCriterion(int criterion, float& minVal, float& maxVal) {
+    switch (criterion) {
+        case 0: // RSRP (dBm)
+            minVal = -130.0f;
+            maxVal = -50.0f;
+            break;
+        case 1: // RSRQ (dB)
+            minVal = -20.0f;
+            maxVal = -3.0f;
+            break;
+        case 2: // RSSI (dBm)
+            minVal = -120.0f;
+            maxVal = -30.0f;
+            break;
+        case 3: // Altitude (метры)
+            minVal = 0.0f;
+            maxVal = 500.0f;  // подберите под свои данные
+            break;
+        default:
+            minVal = -130.0f;
+            maxVal = -50.0f;
+            break;
+    }
 }
 
 double MapManager::haversineDistance(double lat1, double lon1, double lat2, double lon2) const {
@@ -298,7 +340,9 @@ void MapManager::generateHeatmapTexture(const std::vector<MapPoint>& points,
             }
             float value = (sumW > 0) ? (float)(sumWV / sumW) : -140.0f;
             uint8_t r, g, b;
-            getColorForValue(value, r, g, b);
+            float minVal, maxVal;
+            getRangeForCriterion(criterion, minVal, maxVal);
+            valueToGradientColor(value, minVal, maxVal, r, g, b);
             int idx = (y * winW + x) * 4;
             pixels[idx+0] = r;
             pixels[idx+1] = g;
@@ -562,7 +606,9 @@ std::vector<uint8_t> MapManager::computeHeatmapPixels(const std::vector<MapPoint
             }
             float value = (sumW > 0) ? (float)(sumWV / sumW) : -140.0f;
             uint8_t r, g, b;
-            getColorForValue(value, r, g, b);
+            float minVal, maxVal;
+            getRangeForCriterion(criterion, minVal, maxVal);
+            valueToGradientColor(value, minVal, maxVal, r, g, b);
             int idx = (y * winW + x) * 4;
             pixels[idx+0] = r;
             pixels[idx+1] = g;

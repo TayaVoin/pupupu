@@ -68,6 +68,11 @@ private:
     void drawCircle(std::vector<uint8_t>& pixels, int cx, int cy, int r,
                     uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = 200);
     void getColorForValue(float value, uint8_t& r, uint8_t& g, uint8_t& b);
+    // Преобразование значения в цвет по градиенту от startColor до endColor
+    void valueToGradientColor(float value, float minVal, float maxVal, 
+                               uint8_t& r, uint8_t& g, uint8_t& b);
+    // Получение диапазона для выбранного критерия
+    void getRangeForCriterion(int criterion, float& minVal, float& maxVal);
 
     std::atomic<bool> m_workerRunning{true};
     std::thread m_workerThread;
