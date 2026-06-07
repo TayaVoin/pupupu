@@ -1,6 +1,6 @@
 # Dev Environment
 
-Дата актуализации: 2026-06-04.
+Дата актуализации: 2026-06-07.
 
 ## Назначение
 
@@ -46,20 +46,25 @@ cppzmq 4.11.0
 Проверочные сборки на dev выполняются только во временной директории вне репозитория:
 
 ```bash
-cmake -S . -B /private/tmp/pupupu-cmake-check
-cmake --build /private/tmp/pupupu-cmake-check --target server
-rm -rf /private/tmp/pupupu-cmake-check
+rm -rf /private/tmp/pupupu-cmake-audit
+cmake -S . -B /private/tmp/pupupu-cmake-audit \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build /private/tmp/pupupu-cmake-audit \
+  --target server --clean-first --parallel 4
+rm -rf /private/tmp/pupupu-cmake-audit
 ```
 
 После правок в `CMakeLists.txt` отдельный `-DCMAKE_PREFIX_PATH=/opt/homebrew/opt/libpq` не нужен: проект сам добавляет Homebrew-пути `/opt/homebrew/opt/libpq` и `/usr/local/opt/libpq` на macOS.
 
-Последний проверенный результат:
+Последний проверенный результат от 2026-06-07:
 
 ```text
 [100%] Built target server
 ```
 
-Проверено командой без дополнительных CMake-флагов.
+Проверена чистая Release-сборка. Ошибок конфигурации, компиляции и линковки
+нет.
 
 ## Линковка и CMake-особенности
 
@@ -75,9 +80,24 @@ rm -rf /private/tmp/pupupu-cmake-check
 Сборка проходит, но есть не блокирующие предупреждения:
 
 - `third_party/stb/stb_image_write.h` использует deprecated `sprintf` на macOS.
+- `ServerCore::m_historyVersion` объявлено, но не используется.
 - Линкер пишет `ignoring duplicate libraries: 'libimgui.a'`.
 
 Эти warnings не мешают dev-сборке и не являются текущими блокерами.
+
+## Граница проверки
+
+Успешная dev-сборка подтверждает только CMake, компиляцию и линковку на macOS.
+Она не подтверждает:
+
+- подключение Android к ZMQ;
+- актуальность схемы PostgreSQL;
+- сетевую загрузку OSM;
+- визуальную корректность центра карты;
+- корректность IDW и сохраненных PNG;
+- штатный shutdown GUI.
+
+После compile-check эти сценарии обязательно проверяются на stage environment.
 
 ## Запрещено на dev
 
